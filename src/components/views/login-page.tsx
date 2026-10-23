@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AnNahlLogo, AnNahlTagline } from "@/components/an-nahl-logo";
 import { useSession } from "@/lib/session-store";
+import type { SessionUser } from "@/lib/auth";
 import { BookOpen, Eye, EyeOff, Loader2, LogIn, ShieldCheck, Sparkles, Users } from "lucide-react";
 import { toast } from "sonner";
 
@@ -37,16 +38,32 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password }),
       });
-      const data = await res.json();
+      // Handle non-JSON responses (server restarting / compiling)
+      const text = await res.text();
+      let data: { user?: unknown; error?: string } = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = { error: "Server sedang memuat ulang. Mohon tunggu sebentar lalu coba lagi." };
+      }
       if (!res.ok) {
-        setError(data.error || "Login gagal");
+        // 500 = transient server error (e.g. during recompile) → suggest retry
+        if (res.status >= 500) {
+          setError("Server sedang memuat ulang. Tunggu 2-3 detik lalu klik Masuk lagi.");
+        } else {
+          setError(data.error || "Login gagal");
+        }
         return;
       }
-      login(data.user);
-      toast.success(`Selamat datang, ${data.user.name}!`);
+      if (!data.user) {
+        setError("Respons server tidak valid. Coba lagi.");
+        return;
+      }
+      login(data.user as SessionUser);
+      toast.success(`Selamat datang, ${(data.user as SessionUser).name}!`);
       onLoginSuccess();
     } catch {
-      setError("Terjadi kesalahan jaringan");
+      setError("Tidak dapat terhubung ke server. Periksa koneksi lalu coba lagi.");
     } finally {
       setLoading(false);
     }
